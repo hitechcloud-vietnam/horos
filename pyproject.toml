@@ -1,0 +1,87 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "horos"
+version = "0.2.1"
+description = "End-to-end tooling for perception tasks: annotate, train, evaluate, deploy."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "HiTechCloud Viet Nam" }]
+# The lightweight core only. The ML stack (torch, rfdetr, transformers) is
+# deliberately NOT a base dependency: its correct source is platform-specific
+# (Windows needs the PyTorch CUDA index, Jetson needs the JetPack wheel,
+# GPU-less Linux wants the CPU index) and pip's static metadata cannot express
+# that. `horos install` detects the environment and installs the right builds;
+# the CLI refuses ML commands with a pointer to it when the stack is missing.
+dependencies = [
+    "pydantic>=2.6,<3",
+    "flask>=3.0,<4",
+    "pyyaml>=6.0",
+    "pillow>=10.0",
+    # E10 selection and the embedding store: k-center greedy, PAL logistic
+    # fits and .npy vector storage (BSD-3; already pulled in by pycocotools)
+    "numpy>=1.24",
+    # E6 imports it directly for COCO metrics (also a member of rfdetr's train
+    # stack); torch-free, so safe on every platform including Jetson (BSD).
+    "pycocotools>=2.0",
+    # E6-T2 media inference (confirmed decision): frame decoding for GIFs and
+    # videos. Both BSD-2-Clause; imageio-ffmpeg wraps an ffmpeg binary invoked
+    # as a subprocess (no linking), which keeps horos's Apache 2.0 clean (§9).
+    "imageio>=2.31",
+    "imageio-ffmpeg>=0.4.9",
+]
+
+[project.optional-dependencies]
+# `pip install horos[ml]` — for Linux/x86_64 CI and containers where the
+# default PyPI torch build is already the right one. Everywhere else use
+# `horos install`, which picks the platform-correct torch source.
+# R5: rfdetr is pinned exactly. The package has had silent annotation-corruption
+# bugs under specific augmentation settings; a floating version makes training
+# runs unreproducible. Upgrading is a standalone task with a full regression run.
+# The marker skips rfdetr (and the torch it would drag in) on Linux/aarch64 —
+# on Jetson a PyPI torch would silently replace the CUDA JetPack build (§4).
+# [train] pulls the Lightning training stack (pytorch_lightning, torchmetrics,
+# ...) — rfdetr 1.9.4 cannot train without it, and training is a core feature.
+ml = [
+    # [onnx] adds the ONNX export path (onnx, onnxsim, onnx_graphsurgeon,
+    # onnxruntime, polygraphy — Apache-2.0 / MIT, verified 2026-09). tensorrt and
+    # tflite extras are deliberately absent: NVIDIA-licensed / ~600 MB (E8).
+    'rfdetr[train,onnx]==1.9.4; platform_machine != "aarch64" or sys_platform != "linux"',
+    # training-report export (E8): charts/PDF via matplotlib (PSF-style
+    # license), Excel via openpyxl (MIT). Both torch-free.
+    "matplotlib>=3.7",
+    "openpyxl>=3.1",
+    # transformers hosts the OWLv2 backend; range chosen to match rfdetr 1.9.4's
+    # own constraint (>=5.1.0,<6).
+    "transformers>=5.1.0,<6",
+    # Backs rfdetr's aug_config path (the derived augmentation presets, E5).
+    # MIT (verified in wheel metadata 2026-09; the AGPL fork is the separate
+    # "albumentationsx" package). Pinned exactly for the same reason as rfdetr
+    # (R5): augmentation changes silently shift annotations and mAP.
+    # kornia (rfdetr's GPU aug backend) is deliberately NOT installed — horos
+    # passes augmentation_backend="cpu" for identical behavior on all platforms.
+    'albumentations==2.0.8; platform_machine != "aarch64" or sys_platform != "linux"',
+]
+dev = ["pytest>=8", "ruff>=0.4"]
+
+[project.scripts]
+horos = "horos.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["horos*"]
+
+[tool.setuptools.package-data]
+"horos.ui" = ["templates/*.html", "static/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
