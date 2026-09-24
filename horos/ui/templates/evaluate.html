@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=2">
+<link rel="stylesheet" href="/static/controls.css?v=2">
+<script src="/static/controls.js?v=1" defer></script>
+<title>horos — evaluate</title>
+<style>
+  :root {
+    --bg: #101418; --panel: #1a2129; --line: #2a333e;
+    --text: #e6edf3; --dim: #8b98a5; --accent: #0a84ff; --ok: #51cf66; --err: #ff6b6b;
+    --warn: #fcc419;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 30; background: var(--bg);
+           padding: 10px 24px; border-bottom: 1px solid var(--line);
+           display: flex; align-items: center; gap: 14px; }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .04em; }
+  header .project { color: var(--dim); }
+  header nav { margin-left: auto; display: flex; gap: 8px; }
+  header nav a { position: relative; display: flex; align-items: center;
+                 justify-content: center; width: 34px; height: 34px;
+                 border: 1px solid var(--line); border-radius: 8px;
+                 color: var(--dim); }
+  header nav a:hover { border-color: var(--accent); color: var(--accent); }
+  header nav a[aria-current] { color: var(--text); border-color: var(--accent);
+                               background: rgba(77, 171, 247, .12); }
+  header nav a::after { content: attr(data-tip); position: absolute;
+                        top: calc(100% + 8px); right: 0; z-index: 10;
+                        background: var(--panel); border: 1px solid var(--line);
+                        border-radius: 6px; padding: 3px 10px; font-size: 12px;
+                        color: var(--text); white-space: nowrap; opacity: 0;
+                        pointer-events: none; transition: opacity .12s; }
+  header nav a:hover::after { opacity: 1; }
+  header nav svg { width: 18px; height: 18px; }
+  /* two columns: model + metrics on the left, error analysis on the right;
+     each column scrolls independently */
+  main { max-width: 1560px; margin: 0 auto; padding: 20px 24px;
+         display: grid; grid-template-columns: 420px minmax(0, 1fr);
+         gap: 20px; height: calc(100vh - 55px); overflow: hidden; }
+  #left-col, #right-col { display: grid; gap: 20px; min-width: 0; min-height: 0;
+                          overflow-y: auto; align-content: start;
+                          scrollbar-width: thin;
+                          scrollbar-color: var(--line) transparent; }
+  #left-col::-webkit-scrollbar, #right-col::-webkit-scrollbar { width: 8px; }
+  #left-col::-webkit-scrollbar-thumb, #right-col::-webkit-scrollbar-thumb {
+    background: var(--line); border-radius: 4px; }
+  @media (max-width: 1100px) {
+    main { grid-template-columns: 1fr; height: auto; overflow: visible; }
+    #left-col, #right-col { overflow: visible; }
+  }
+  /* worst-images grid (annotate-style thumbs) */
+  .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                gap: 10px; }
+  .thumb { position: relative; background: var(--bg); border: 1px solid var(--line);
+           border-radius: 8px; overflow: hidden; cursor: pointer; }
+  .thumb:hover { border-color: var(--accent); }
+  .thumb img { width: 100%; height: 100px; object-fit: cover; display: block;
+               background: #000; }
+  .thumb .meta { display: flex; align-items: center; gap: 6px; padding: 5px 8px;
+                 font-size: 11px; color: var(--dim); }
+  .thumb .meta .fname { overflow: hidden; text-overflow: ellipsis;
+                        white-space: nowrap; flex: 1; }
+  /* full-screen overlay viewer */
+  #viewer { position: fixed; inset: 0; z-index: 50; background: rgba(10,13,16,.92);
+            display: flex; flex-direction: column; padding: 18px 22px; gap: 12px; }
+  #viewer.hidden { display: none; }  /* the id rule outranks bare .hidden */
+  #viewer-top { display: flex; align-items: center; gap: 12px; color: var(--dim); }
+  /* the file name doubles as the link to that photo in the annotator */
+  a#viewer-title { color: var(--text); font-weight: 600; display: inline-flex;
+                   align-items: center; gap: 7px; }
+  a#viewer-title:hover { color: var(--accent); text-decoration: underline; }
+  a#viewer-title svg { width: 14px; height: 14px; opacity: .6; }
+  a#viewer-title:hover svg { opacity: 1; }
+  #viewer-canvas-wrap { flex: 1; min-height: 0; display: flex;
+                        align-items: center; justify-content: center; }
+  #viewer-canvas { max-width: 100%; max-height: 100%; border-radius: 8px; }
+  #viewer-bottom { display: flex; align-items: center; gap: 14px; }
+  .nav-btn { font-size: 18px; padding: 6px 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--line);
+           border-radius: 10px; padding: 18px; }
+  .panel h2 { margin: 0 0 12px; font-size: 14px; color: var(--dim);
+              text-transform: uppercase; letter-spacing: .08em; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  select, input[type=number] { background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px;
+    font: inherit; }
+  select:focus { outline: none; border-color: var(--accent); }
+  button { background: var(--bg); color: var(--text); border: 1px solid var(--line);
+           border-radius: 6px; padding: 6px 14px; cursor: pointer; font: inherit; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { border-color: var(--accent); color: var(--accent); }
+  input[type=range] { -webkit-appearance: none; appearance: none; flex: 1;
+    height: 4px; border-radius: 2px; background: var(--line); outline: none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none;
+    appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); border: 3px solid var(--panel);
+    box-shadow: 0 0 0 1px var(--accent); cursor: pointer; }
+  input[type=range]::-moz-range-thumb { width: 14px; height: 14px;
+    border-radius: 50%; background: var(--accent); border: 3px solid var(--panel);
+    box-shadow: 0 0 0 1px var(--accent); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .bar { background: var(--line); border-radius: 4px; height: 8px; overflow: hidden;
+         flex: 1; min-width: 160px; }
+  .bar > div { background: var(--accent); height: 100%; width: 0;
+               transition: width .4s; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+           gap: 12px; margin-bottom: 14px; }
+  .card { background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+          padding: 14px; }
+  .card .num { font-size: 24px; font-weight: 600; }
+  .card .label { color: var(--dim); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+  .apbar { background: var(--line); border-radius: 4px; height: 8px; overflow: hidden; }
+  .apbar > div { background: var(--ok); height: 100%; }
+  /* error analysis (E6-T8) */
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 14px; font-size: 12px;
+            color: var(--dim); margin: 0 0 12px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px;
+                         border-radius: 2px; margin-right: 5px; vertical-align: -1px;
+                         background: var(--c); }
+  .legend .dashed::before { background: transparent; border: 2px dashed var(--c);
+                            width: 8px; height: 8px; }
+  /* Per class and the confusion matrix used to sit side by side, which left
+     both too narrow to read: the matrix scrolled and the table was cut off.
+     One at a time, full width, switched by a tab. */
+  .tabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--line);
+          margin: 4px 0 12px; }
+  .tabs button { background: none; border: none; border-radius: 0; color: var(--dim);
+                 padding: 8px 14px; font-size: 13px; border-bottom: 2px solid transparent;
+                 margin-bottom: -1px; }
+  .tabs button:hover:not(.on) { color: var(--text); border-color: var(--line); }
+  .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+  .tabs .hint { margin-left: auto; color: var(--dim); font-size: 12px; }
+  /* the tab strip also carries the export control; it is an action, not a tab */
+  .tabs .action { border: 1px solid var(--line); border-radius: 6px; color: var(--text);
+                  padding: 5px 12px; font-size: 12px; margin: 0 0 6px 10px; }
+  .tabs button.action:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .tabs select.action { padding: 4px 8px; background: var(--bg); }
+  .tab-panel { display: none; }
+  .tab-panel.on { display: block; }
+  .matrix-wrap { overflow-x: auto; }
+  table.matrix { width: auto; font-size: 12px; }
+  table.matrix th, table.matrix td { padding: 4px 8px; text-align: center;
+                                     border-bottom: none; white-space: nowrap; }
+  table.matrix th.gt { text-align: right; color: var(--text); font-weight: 500;
+                       text-transform: none; }
+  table.matrix th.pred { writing-mode: vertical-rl; transform: rotate(180deg);
+                         text-transform: none; color: var(--text); font-weight: 500;
+                         max-height: 120px; }
+  table.matrix td { border-radius: 4px; min-width: 38px; }
+  table.matrix td.diag { outline: 1px solid rgba(81, 207, 102, .35); }
+  table.matrix td.bg { color: var(--dim); }
+  .pairs li { display: flex; gap: 8px; align-items: baseline; padding: 3px 0;
+              border-bottom: 1px solid var(--line); }
+  .pairs .n { color: var(--text); font-weight: 600; min-width: 28px; text-align: right; }
+  .pairs .arrow { color: var(--dim); }
+  .worst-thumb .badges { display: flex; gap: 4px; }
+  .badge { font-size: 10px; padding: 0 5px; border-radius: 4px; color: #101418;
+           font-weight: 600; }
+  /* ---- suggested threshold (E6-T10) ---- */
+  .advice { background: var(--bg); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+            border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
+  .advice-main { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+  .advice-num { font-size: 30px; font-weight: 600; line-height: 1.1; color: var(--accent);
+                font-family: inherit; font-variant-numeric: tabular-nums; }
+  .advice-main .grow { flex: 1 1 220px; min-width: 0; font-size: 13px; }
+  .advice-side { flex: none; margin-left: auto; display: flex; flex-direction: column;
+                 gap: 8px; align-items: flex-end; }
+  .advice.unsure { border-left-color: var(--warn); }
+  .advice.unsure .advice-num { color: var(--warn); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { background: var(--bg); color: var(--dim); border: none; border-radius: 0;
+                padding: 5px 10px; font-size: 12px; }
+  .seg button.on { background: rgba(10, 132, 255, .15); color: var(--accent); }
+  .seg button:hover:not(.on) { color: var(--text); }
+  #adv-curve { width: 100%; height: 84px; display: block; margin-top: 10px; }
+  .adv-notes { margin: 6px 0 0; padding-left: 18px; color: var(--dim); font-size: 12px; }
+  .adv-classes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .adv-class { border: 1px solid var(--line); border-radius: 20px; padding: 2px 10px;
+               font-size: 12px; color: var(--dim); }
+  .adv-class b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .adv-class.thin { opacity: .55; border-style: dashed; }
+  /* "fix the labels" shortcut from an error back to the annotator */
+  .thumb-edit { position: absolute; top: 6px; right: 6px; z-index: 2;
+                display: flex; align-items: center; justify-content: center;
+                width: 26px; height: 26px; border-radius: 6px; color: var(--text);
+                background: rgba(16, 20, 24, .78); border: 1px solid var(--line);
+                opacity: 0; transition: opacity .12s; }
+  .thumb:hover .thumb-edit, .thumb-edit:focus-visible { opacity: 1; }
+  .thumb-edit:hover { border-color: var(--accent); color: var(--accent); }
+  .thumb-edit svg { width: 14px; height: 14px; }
+  .fix-link { display: inline-flex; align-items: center; gap: 7px; color: var(--text);
+              border: 1px solid var(--line); border-radius: 6px; padding: 6px 14px; }
+  .fix-link:hover { border-color: var(--accent); color: var(--accent); }
+  .fix-link svg { width: 15px; height: 15px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1 style="display:flex;align-items:center;gap:9px">
+    <svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M7 22 L7 9 Q7 7 9 7 L22 7" fill="none" stroke="#e6edf3"
+            stroke-width="4.6" stroke-linecap="round"/>
+      <rect x="17" y="17" width="9" height="9" rx="2.2" fill="#4dabf7"/></svg>
+    horos</h1>
+  <span class="project" id="project-name">—</span>
+  <nav>
+    <a href="/" data-tip="Dataset">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="5" rx="8" ry="3"/>
+        <path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/>
+        <path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg></a>
+    <a href="/annotate" data-tip="Annotate">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+        <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></a>
+    <a href="/loop" data-tip="Loop">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12a9 9 0 0 1-15.5 6.2"/><path d="M3 12a9 9 0 0 1 15.5-6.2"/>
+        <polyline points="21 3 21 9 15 9"/><polyline points="3 21 3 15 9 15"/></svg></a>
+    <a href="/train" data-tip="Training">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></a>
+    <a href="/evaluate" data-tip="Evaluate" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/>
+        <line x1="12" y1="1" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="1" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="23" y2="12"/></svg></a>
+    <a href="/experiments" data-tip="Experiments">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="5" height="9" rx="1"/>
+        <rect x="9.5" y="4" width="5" height="16" rx="1"/>
+        <rect x="16" y="8" width="5" height="12" rx="1"/></svg></a>
+    <a href="/lab" data-tip="Lab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 3h6"/><path d="M10 3v6.5L4.6 18.4A2 2 0 0 0 6.3 21h11.4a2 2 0 0 0 1.7-2.6L14 9.5V3"/>
+        <path d="M7.5 14h9"/></svg></a>
+  </nav>
+</header>
+<main>
+  <div id="left-col">
+  <section class="panel">
+    <h2>Model under test</h2>
+    <div class="row">
+      <label for="run-select">Run</label>
+      <select id="run-select" style="flex:1;min-width:0"></select>
+    </div>
+    <p id="run-meta" style="color:var(--dim);font-size:13px;margin:8px 0 0"></p>
+    <p id="no-runs" class="hidden" style="color:var(--dim)">
+      No completed training runs yet — train a model first.</p>
+    <p style="color:var(--dim);font-size:12px;margin:8px 0 0">
+      Want to try the model on your own photos or videos? Use the
+      <a href="/lab" style="color:var(--accent)">Lab</a> page.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Metrics on a held-out split</h2>
+    <div class="row" style="margin-bottom:12px">
+      <label for="split-select">Split</label>
+      <select id="split-select">
+        <option value="test">test</option>
+        <option value="valid">valid</option>
+      </select>
+      <div class="seg" id="labels-seg" title="Which labels to score against">
+        <button data-labels="current" class="on"
+                title="The project's labels as they are now — a correction you just made counts immediately">Current labels</button>
+        <button data-labels="snapshot"
+                title="The export this run trained with, frozen — to reproduce an older number">Run snapshot</button>
+      </div>
+      <button class="primary" id="eval-btn">Run evaluation</button>
+      <div class="bar hidden" id="eval-bar-wrap"><div id="eval-bar"></div></div>
+      <span id="eval-status" style="color:var(--dim);font-size:13px"></span>
+    </div>
+    <div id="report" class="hidden">
+      <div class="cards">
+        <div class="card"><div class="num" id="m-map">—</div>
+          <div class="label">mAP@[.5:.95]</div></div>
+        <div class="card"><div class="num" id="m-map50">—</div>
+          <div class="label">mAP@50</div></div>
+        <div class="card"><div class="num" id="m-map75">—</div>
+          <div class="label">mAP@75</div></div>
+        <div class="card"><div class="num" id="m-mar">—</div>
+          <div class="label">mAR@100</div></div>
+      </div>
+      <table>
+        <thead><tr><th>class</th><th>instances</th><th>AP@50</th>
+          <th>AP@[.5:.95]</th><th style="width:35%"></th></tr></thead>
+        <tbody id="per-class"></tbody>
+      </table>
+      <p id="report-meta" style="color:var(--dim);font-size:12px"></p>
+      <ul id="report-notes" class="adv-notes"></ul>
+    </div>
+  </section>
+  </div>
+
+  <div id="right-col">
+  <section class="panel" id="errors-panel">
+    <h2>Error analysis</h2>
+    <p id="errors-empty" style="color:var(--dim);margin:0">
+      Run an evaluation on a split first — the analysis is computed from its
+      saved detections.</p>
+    <div id="errors" class="hidden">
+      <!-- where to operate: the F-score sweep over the saved detections (E6-T10) -->
+      <div id="advice" class="advice hidden">
+        <div class="advice-main">
+          <div>
+            <div class="advice-num" id="adv-value">—</div>
+            <div class="label" style="color:var(--dim);font-size:12px">suggested confidence</div>
+          </div>
+          <div class="grow">
+            <p id="adv-reason" style="margin:0"></p>
+            <ul class="adv-notes" id="adv-notes"></ul>
+          </div>
+          <div class="advice-side">
+            <div class="seg" id="adv-beta">
+              <button data-beta="1" class="on" title="Weigh misses and false alarms equally (F1)">Balanced</button>
+              <button data-beta="2" title="Weigh a missed object twice as heavily (F2)">Fewer misses</button>
+              <button data-beta="0.5" title="Weigh a false alarm twice as heavily (F0.5)">Fewer false alarms</button>
+            </div>
+            <button class="primary" id="adv-use">Use this threshold</button>
+          </div>
+        </div>
+        <svg id="adv-curve" viewBox="0 0 600 84" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <div class="legend" style="margin-top:2px">
+          <span style="--c:#0a84ff">F-score</span>
+          <span style="--c:#8b98a5">precision</span>
+          <span class="dashed" style="--c:#8b98a5">recall</span>
+          <span style="--c:rgba(10,132,255,.25)">as good as the peak</span>
+        </div>
+        <div class="adv-classes" id="adv-classes"></div>
+      </div>
+      <div class="row" style="margin-bottom:12px">
+        <label for="err-thr">Confidence ≥</label>
+        <input type="range" id="err-thr" min="0.05" max="0.95" step="0.01" value="0.5"
+               style="max-width:220px">
+        <span id="err-thr-value" class="mono" style="min-width:34px">0.50</span>
+        <label for="err-iou" style="margin-left:10px">IoU ≥</label>
+        <select id="err-iou">
+          <option value="0.5">0.50</option>
+          <option value="0.75">0.75</option>
+        </select>
+        <span id="errors-status" style="color:var(--dim);font-size:13px"></span>
+      </div>
+      <div class="cards">
+        <div class="card"><div class="num" id="e-tp" style="color:#4dabf7">—</div>
+          <div class="label">correct</div></div>
+        <div class="card"><div class="num" id="e-fn" style="color:#ffa94d">—</div>
+          <div class="label">missed</div></div>
+        <div class="card"><div class="num" id="e-fp" style="color:#ff6b6b">—</div>
+          <div class="label">false positives</div></div>
+        <div class="card"><div class="num" id="e-conf" style="color:#cc5de8">—</div>
+          <div class="label">wrong class</div></div>
+      </div>
+      <div class="tabs" id="err-tabs">
+        <button data-tab="classes" class="on">Per class</button>
+        <button data-tab="matrix">Confusion matrix</button>
+        <span class="hint" id="tab-hint"></span>
+        <button class="action" id="chart-btn"
+                title="One image with the confusion matrix and the per-class table, at the threshold and IoU set below">
+          Export chart</button>
+        <select class="action" id="chart-format" title="Image format">
+          <option value="png">PNG</option>
+          <option value="pdf">PDF</option>
+        </select>
+      </div>
+      <div class="tab-panel on" id="tab-classes">
+        <table>
+          <thead><tr><th>class</th><th>recall</th><th>precision</th>
+            <th title="ground truth left undetected">missed</th>
+            <th title="predictions matching nothing">false</th>
+            <th title="ground truth detected as another class">confused</th></tr></thead>
+          <tbody id="err-classes"></tbody>
+        </table>
+      </div>
+      <div class="tab-panel" id="tab-matrix">
+        <div class="matrix-wrap"><table class="matrix" id="confusion"></table></div>
+        <h3 style="font-size:13px;color:var(--dim);margin:16px 0 6px">
+          Most confused pairs</h3>
+        <ul class="pairs" id="confused-pairs" style="list-style:none;margin:0;padding:0"></ul>
+      </div>
+      <h3 style="font-size:13px;color:var(--dim);margin:18px 0 8px">
+        Worst images <span id="worst-count" style="font-weight:400"></span></h3>
+      <div class="legend">
+        <span style="--c:#51cf66">ground truth (matched)</span>
+        <span style="--c:#4dabf7">correct</span>
+        <span style="--c:#ff6b6b">false positive</span>
+        <span class="dashed" style="--c:#ffa94d">missed</span>
+        <span style="--c:#cc5de8">wrong class</span>
+      </div>
+      <p id="worst-empty" class="hidden" style="color:var(--ok);margin:0">
+        No errors at this threshold — every ground-truth box is found and nothing
+        is hallucinated.</p>
+      <div class="image-grid" id="worst-grid"></div>
+    </div>
+  </section>
+  </div>
+</main>
+
+<div id="viewer" class="hidden">
+  <div id="viewer-top">
+    <a id="viewer-title" target="_blank" rel="noopener"
+       title="Open this photo in the annotator, in a new tab"></a>
+    <span id="viewer-frame" class="mono"></span>
+    <span style="margin-left:auto"></span>
+    <button id="viewer-close" title="Close (Esc)">✕</button>
+  </div>
+  <div id="viewer-canvas-wrap"><canvas id="viewer-canvas"></canvas></div>
+  <div id="viewer-bottom">
+    <button class="nav-btn" id="viewer-prev" title="Previous (←)">←</button>
+    <span id="det-count" style="color:var(--dim);font-size:13px;min-width:130px"></span>
+    <a class="fix-link" id="viewer-fix" target="_blank" rel="noopener"
+       style="margin-left:auto"
+       title="Open this photo in the annotator, in a new tab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      Fix labels</a>
+    <button class="nav-btn" id="viewer-next" title="Next (→)">→</button>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const api = (path, opts) => fetch("/api/v1" + path, opts).then(async (r) => {
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    throw new Error((data.error && data.error.message) || r.statusText);
+  }
+  return data;
+});
+
+// ------------------------------------------------------------------- viewer
+// full-screen viewer for the worst images (server-rendered overlays)
+let viewerPos = -1;           // index into `worstItems`
+
+function closeViewer() { $("viewer").classList.add("hidden"); viewerPos = -1; }
+
+function stepViewer(delta) {
+  if (viewerPos < 0 || !worstItems.length) return;
+  viewerPos = (viewerPos + delta + worstItems.length) % worstItems.length;
+  drawViewer();
+}
+
+$("viewer-close").onclick = closeViewer;
+// clicking the dimmed backdrop (anywhere that is not the photo or the
+// controls) closes the viewer too
+$("viewer").onclick = (e) => {
+  if (e.target === $("viewer") || e.target === $("viewer-canvas-wrap")) closeViewer();
+};
+$("viewer-prev").onclick = () => stepViewer(-1);
+$("viewer-next").onclick = () => stepViewer(1);
+document.addEventListener("keydown", (e) => {
+  if ($("viewer").classList.contains("hidden")) return;
+  if (e.key === "Escape") closeViewer();
+  else if (e.key === "ArrowLeft") stepViewer(-1);
+  else if (e.key === "ArrowRight") stepViewer(1);
+});
+
+// --------------------------------------------------------------- evaluation
+// which ground truth an evaluation scores against; current labels by default,
+// so a correction made on the annotate page counts on the next run
+let evalLabels = "current";
+$("labels-seg").onclick = (event) => {
+  const button = event.target.closest("button[data-labels]");
+  if (!button) return;
+  evalLabels = button.dataset.labels;
+  [...$("labels-seg").children].forEach((b) => b.classList.toggle("on", b === button));
+};
+
+$("eval-btn").onclick = async () => {
+  const run = $("run-select").value;
+  if (!run) return;
+  const split = $("split-select").value;
+  $("eval-btn").disabled = true;
+  $("eval-bar-wrap").classList.remove("hidden");
+  $("eval-bar").style.width = "0";
+  $("eval-status").textContent = "starting…";
+  try {
+    const { job_id } = await api(`/train/runs/${run}/evaluate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ split, labels: evalLabels }),
+    });
+    await pollJob(job_id, (ev) => {
+      if (ev.type === "progress" && ev.total) {
+        $("eval-bar").style.width = (100 * ev.current / ev.total) + "%";
+        $("eval-status").textContent = `${ev.current}/${ev.total} images`;
+      }
+    });
+    await showReport(run, split);
+    $("eval-status").textContent = "done";
+  } catch (e) {
+    $("eval-status").textContent = e.message;
+  } finally {
+    $("eval-btn").disabled = false;
+    $("eval-bar-wrap").classList.add("hidden");
+  }
+};
+
+function pollJob(jobId, onEvent) {
+  return new Promise((resolve, reject) => {
+    let seen = 0;
+    const tick = async () => {
+      let job;
+      try { job = await api(`/jobs/${jobId}?after=${seen}`); }
+      catch (e) { return reject(e); }
+      seen = job.num_events;
+      for (const ev of job.events) {
+        if (onEvent) onEvent(ev);
+        if (ev.type === "failed") return reject(new Error(ev.message));
+      }
+      if (job.state === "running") setTimeout(tick, 800);
+      else if (job.state === "completed") resolve();
+      else reject(new Error("job " + job.state));
+    };
+    tick();
+  });
+}
+
+async function showReport(run, split) {
+  let report;
+  try { report = await api(`/train/runs/${run}/eval/${split}`); }
+  catch (e) {
+    $("report").classList.add("hidden");
+    showErrorsPanel(false);
+    return;
+  }
+  loadErrors(run, split);
+  loadAdvice(run, split);
+  const pct = (v) => (100 * v).toFixed(1) + "%";
+  $("m-map").textContent = pct(report.map_5095);
+  $("m-map50").textContent = pct(report.map_50);
+  $("m-map75").textContent = pct(report.map_75);
+  $("m-mar").textContent = pct(report.mar_100);
+  $("per-class").innerHTML = report.per_class
+    .map((c) => `<tr><td>${c.name}</td><td>${c.instances}</td>
+      <td>${pct(c.ap50)}</td><td>${pct(c.ap)}</td>
+      <td><div class="apbar"><div style="width:${100 * c.ap50}%"></div></div></td></tr>`)
+    .join("");
+  const source = report.labels === "current"
+    ? "the project's labels as they are now" : "this run's own snapshot";
+  $("report-meta").textContent =
+    `${report.num_images} images · ${report.num_instances} ground-truth boxes · ` +
+    `scored against ${source} · evaluated ${new Date(report.created_at).toLocaleString()}`;
+  $("report-notes").innerHTML = (report.notes || [])
+    .slice(1)  // the first note only repeats the line above
+    .map((n) => `<li>${n}</li>`).join("");
+  $("report").classList.remove("hidden");
+}
+
+// -------------------------------------------------------- error analysis (E6-T8)
+let worstItems = [];          // WorstCases.images of the current view
+let errorsTimer = null;
+let errorsSeq = 0;            // ignore responses of superseded requests
+
+const ERR_COLORS = { tp: "#4dabf7", fp: "#ff6b6b", fn: "#ffa94d", confused: "#cc5de8" };
+
+function errorParams() {
+  return `threshold=${$("err-thr").value}&iou=${$("err-iou").value}`;
+}
+// A split snapshot keeps the project's own image ids and file names, so an
+// error on the evaluate page links straight back to that photo in the
+// annotator. The annotate page widens its queue to find it (it is labeled, so
+// the default "To do" view does not hold it).
+function annotateURL(imageId) {
+  return `/annotate#${imageId}`;
+}
+function overlayURL(run, split, imageId) {
+  return `/api/v1/train/runs/${run}/eval/${split}/images/${imageId}/overlay.png?${errorParams()}`;
+}
+function showErrorsPanel(show) {
+  $("errors").classList.toggle("hidden", !show);
+  $("errors-empty").classList.toggle("hidden", show);
+  if (!show) { advice = null; $("advice").classList.add("hidden"); }
+}
+
+async function loadErrors(run, split) {
+  const seq = ++errorsSeq;
+  $("errors-status").textContent = "computing…";
+  let analysis, worst;
+  try {
+    [analysis, worst] = await Promise.all([
+      api(`/train/runs/${run}/eval/${split}/errors?${errorParams()}`),
+      api(`/train/runs/${run}/eval/${split}/worst?${errorParams()}&top=24`),
+    ]);
+  } catch (e) {
+    if (seq !== errorsSeq) return;
+    // evaluations made before detections were persisted have a report but
+    // no detections: the empty-state text explains what to do
+    $("errors-empty").textContent = e.message;
+    showErrorsPanel(false);
+    return;
+  }
+  if (seq !== errorsSeq) return;
+  showErrorsPanel(true);
+  renderErrors(analysis);
+  renderWorst(run, split, worst);
+  $("errors-status").textContent = "";
+}
+
+function renderErrors(a) {
+  $("e-tp").textContent = a.tp;
+  $("e-fn").textContent = a.fn;
+  $("e-fp").textContent = a.fp;
+  $("e-conf").textContent = a.confused;
+
+  const n = a.classes.length;                 // includes background (last)
+  const bg = n - 1;
+  const short = (name) => name === "background" ? "—" : name;
+  const rowMax = a.matrix.map((row) => Math.max(1, ...row));
+  let html = `<tr><th></th>${a.classes.map((c) =>
+    `<th class="pred" title="predicted ${c}">${short(c)}</th>`).join("")}</tr>`;
+  a.matrix.forEach((row, i) => {
+    html += `<tr><th class="gt" title="ground truth ${a.classes[i]}">${short(a.classes[i])}</th>`;
+    row.forEach((v, j) => {
+      const isBg = i === bg || j === bg;
+      const isDiag = i === j && !isBg;
+      const tint = isDiag ? "81,207,102" : (i === bg ? "255,107,107" : (j === bg ? "255,169,77" : "204,93,232"));
+      const alpha = v ? 0.15 + 0.6 * v / rowMax[i] : 0;
+      const cls = (isDiag ? "diag " : "") + (i === bg && j === bg ? "bg" : "");
+      const title = i === bg ? `${v} false ${a.classes[j]}`
+        : j === bg ? `${v} ${a.classes[i]} missed`
+        : isDiag ? `${v} ${a.classes[i]} correct`
+        : `${v} ${a.classes[i]} predicted as ${a.classes[j]}`;
+      html += `<td class="${cls}" title="${title}"
+        style="background:rgba(${tint},${alpha.toFixed(2)})">${(i === bg && j === bg) ? "" : v}</td>`;
+    });
+    html += "</tr>";
+  });
+  $("confusion").innerHTML = html;
+
+  const pct = (v) => (100 * v).toFixed(0) + "%";
+  $("err-classes").innerHTML = a.per_class.map((c) => `<tr>
+    <td>${c.name}</td><td>${pct(c.recall)}</td><td>${pct(c.precision)}</td>
+    <td style="color:${c.fn ? ERR_COLORS.fn : "inherit"}">${c.fn}</td>
+    <td style="color:${c.fp ? ERR_COLORS.fp : "inherit"}">${c.fp}</td>
+    <td style="color:${c.confused_as ? ERR_COLORS.confused : "inherit"}">${c.confused_as}</td>
+  </tr>`).join("");
+
+  $("confused-pairs").innerHTML = a.confused_pairs.length
+    ? a.confused_pairs.slice(0, 8).map((p) => `<li><span class="n">${p.count}</span>
+        <span>${p.gt_name}</span><span class="arrow">→ predicted as</span>
+        <span style="color:${ERR_COLORS.confused}">${p.pred_name}</span></li>`).join("")
+    : `<li style="color:var(--dim)">none — every matched box has the right class</li>`;
+  lastAnalysis = a;
+  syncErrTab();
+}
+
+// Per class / Confusion matrix, one at a time; the choice sticks per browser
+let lastAnalysis = null;
+let errTab = (() => {
+  try { return localStorage.getItem("horos_err_tab") || "classes"; } catch (e) { return "classes"; }
+})();
+
+// the strip carries the headline of the view on show: the matrix's axes where
+// the matrix lives, and on the table the one number the matrix would have told
+// you at a glance
+function syncErrTab() {
+  [...$("err-tabs").querySelectorAll("button")].forEach((b) =>
+    b.classList.toggle("on", b.dataset.tab === errTab));
+  $("tab-classes").classList.toggle("on", errTab === "classes");
+  $("tab-matrix").classList.toggle("on", errTab === "matrix");
+  $("tab-hint").textContent = errTab === "matrix"
+    ? "rows: ground truth · columns: predicted"
+    : lastAnalysis
+      ? `${lastAnalysis.confused} box(es) found but labeled as another class`
+      : "";
+}
+
+// one sheet with both views, rendered server-side from the same analysis
+$("chart-btn").onclick = async () => {
+  const run = $("run-select").value;
+  if (!run) return;
+  const button = $("chart-btn");
+  const before = button.textContent;
+  button.disabled = true;
+  button.textContent = "rendering…";
+  try {
+    const out = await api(`/train/runs/${run}/export/evaluation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        split: $("split-select").value,
+        threshold: Number($("err-thr").value),
+        iou: Number($("err-iou").value),
+        format: $("chart-format").value,
+      }),
+    });
+    const link = document.createElement("a");
+    link.href = out.download_url;
+    link.download = out.name;
+    link.click();
+    button.textContent = "downloaded";
+    setTimeout(() => { button.textContent = before; }, 2500);
+  } catch (e) {
+    button.textContent = before;
+    $("errors-status").textContent = e.message;
+  } finally {
+    button.disabled = false;
+  }
+};
+
+$("err-tabs").onclick = (event) => {
+  const button = event.target.closest("button[data-tab]");
+  if (!button) return;
+  errTab = button.dataset.tab;
+  try { localStorage.setItem("horos_err_tab", errTab); } catch (e) {}
+  syncErrTab();
+};
+syncErrTab();
+
+function renderWorst(run, split, report) {
+  worstItems = report.images;
+  $("worst-count").textContent =
+    `— ${report.images_with_errors} of ${report.total_images} images have errors`;
+  $("worst-empty").classList.toggle("hidden", worstItems.length > 0);
+  const badge = (n, kind, label) => n
+    ? `<span class="badge" style="background:${ERR_COLORS[kind]}" title="${label}">${n}</span>` : "";
+  $("worst-grid").innerHTML = worstItems.map((img, idx) => `
+    <div class="thumb worst-thumb" data-idx="${idx}"
+         title="${img.file_name}: ${img.fn} missed, ${img.fp} false, ${img.confused} wrong class">
+      <a class="thumb-edit" href="${annotateURL(img.image_id)}" target="_blank" rel="noopener"
+         title="Fix this photo's labels in the annotator">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></a>
+      <img loading="lazy" src="${overlayURL(run, split, img.image_id)}" alt="">
+      <div class="meta">
+        <span class="badges">${badge(img.fn, "fn", "missed")}${badge(img.fp, "fp", "false positives")}${badge(img.confused, "confused", "wrong class")}</span>
+        <span class="fname">${img.file_name}</span>
+      </div>
+    </div>`).join("");
+  $("worst-grid").querySelectorAll(".thumb").forEach((el) => {
+    el.onclick = () => openOverlayViewer(Number(el.dataset.idx));
+  });
+  // the pencil opens the annotator instead of the overlay viewer
+  $("worst-grid").querySelectorAll(".thumb-edit").forEach((el) => {
+    el.onclick = (event) => event.stopPropagation();
+  });
+}
+
+function openOverlayViewer(idx) {
+  if (!worstItems[idx]) return;
+  viewerPos = idx;
+  $("viewer").classList.remove("hidden");
+  drawViewer();
+}
+
+function drawViewer() {
+  const item = worstItems[viewerPos];
+  if (!item) return;
+  const title = $("viewer-title");
+  title.href = annotateURL(item.image_id);
+  title.innerHTML = `<span></span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+  title.firstElementChild.textContent = item.file_name;  // never parsed as markup
+  $("viewer-frame").textContent = `${viewerPos + 1}/${worstItems.length}`;
+  $("det-count").textContent =
+    `${item.fn} missed · ${item.fp} false · ${item.confused} wrong class · ${item.tp} correct`;
+  $("viewer-fix").href = annotateURL(item.image_id);
+  const img = new Image();
+  const pos = viewerPos;
+  img.onload = () => {
+    if (pos !== viewerPos) return;
+    const canvas = $("viewer-canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext("2d").drawImage(img, 0, 0);
+  };
+  img.src = overlayURL($("run-select").value, $("split-select").value, item.image_id);
+}
+
+// --------------------------------------------- suggested threshold (E6-T10)
+// One sweep of the saved detections says where to operate; the slider then
+// only moves the cursor on that curve, so this is fetched per run / split /
+// IoU / weighting, never per slider move.
+let advice = null;
+let adviceSeq = 0;
+let adviceBeta = 1;
+
+async function loadAdvice(run, split) {
+  const seq = ++adviceSeq;
+  let next;
+  try {
+    next = await api(`/train/runs/${run}/eval/${split}/threshold`
+      + `?iou=${$("err-iou").value}&beta=${adviceBeta}`);
+  } catch (e) {
+    if (seq === adviceSeq) { advice = null; $("advice").classList.add("hidden"); }
+    return;
+  }
+  if (seq !== adviceSeq) return;
+  advice = next;
+  renderAdvice();
+}
+
+function renderAdvice() {
+  if (!advice) { $("advice").classList.add("hidden"); return; }
+  $("advice").classList.remove("hidden");
+  $("advice").classList.toggle("unsure", !advice.confident);
+  $("adv-value").textContent = advice.recommended.toFixed(2);
+  $("adv-reason").textContent = advice.reason;
+  $("adv-notes").innerHTML = advice.notes.map((n) => `<li>${n}</li>`).join("");
+  $("adv-use").disabled = !advice.confident;
+  const pct = (v) => (100 * v).toFixed(0) + "%";
+  $("adv-classes").innerHTML = advice.per_class.map((c) => {
+    const tip = [
+      `${c.instances} ground-truth box(es)`,
+      `at ${c.recommended.toFixed(2)}: precision ${pct(c.precision)}, recall ${pct(c.recall)}`,
+      c.enough_data ? "" : "too few boxes for this number to mean much",
+    ].filter(Boolean).join(" · ");
+    const thin = c.enough_data ? "" : " thin";
+    return `<span class="adv-class${thin}" title="${c.name} — ${tip}">`
+      + `${c.name} <b>${c.recommended.toFixed(2)}</b></span>`;
+  }).join("");
+  drawCurve();
+}
+
+function drawCurve() {
+  const svg = $("adv-curve");
+  if (!advice || !advice.points.length) { svg.innerHTML = ""; return; }
+  const W = 600, H = 84, pad = 4;
+  const lo = advice.points[0].threshold;
+  const hi = advice.points[advice.points.length - 1].threshold;
+  const x = (t) => (t - lo) / (hi - lo || 1) * W;
+  const y = (v) => H - pad - v * (H - 2 * pad);
+  const path = (key) => advice.points
+    .map((p, i) => `${i ? "L" : "M"}${x(p.threshold).toFixed(1)} ${y(p[key]).toFixed(1)}`)
+    .join(" ");
+  const band = advice.confident
+    ? `<rect x="${x(advice.plateau[0]).toFixed(1)}" y="0"
+             width="${Math.max(1, x(advice.plateau[1]) - x(advice.plateau[0])).toFixed(1)}"
+             height="${H}" fill="rgba(10,132,255,.14)"/>`
+    : "";
+  const mark = (t, color, dash) => `<line x1="${x(t).toFixed(1)}" y1="0"
+      x2="${x(t).toFixed(1)}" y2="${H}" stroke="${color}" stroke-width="1"
+      ${dash ? `stroke-dasharray="3 3"` : ""} vector-effect="non-scaling-stroke"/>`;
+  const line = (d, color, dash) => `<path d="${d}" fill="none" stroke="${color}"
+      stroke-width="${dash ? 1.5 : 2}" ${dash ? 'stroke-dasharray="4 3"' : ""}
+      vector-effect="non-scaling-stroke"/>`;
+  svg.innerHTML = band
+    + line(path("precision"), "#8b98a5", false)
+    + line(path("recall"), "#8b98a5", true)
+    + line(path("f_score"), "#0a84ff", false)
+    + (advice.confident ? mark(advice.recommended, "#0a84ff", false) : "")
+    + mark(Number($("err-thr").value), "#e6edf3", true);
+}
+
+$("adv-use").onclick = () => {
+  if (!advice) return;
+  $("err-thr").value = advice.recommended;
+  $("err-thr-value").textContent = advice.recommended.toFixed(2);
+  drawCurve();
+  loadErrors($("run-select").value, $("split-select").value);
+};
+$("adv-beta").onclick = (event) => {
+  const button = event.target.closest("button[data-beta]");
+  if (!button) return;
+  adviceBeta = Number(button.dataset.beta);
+  [...$("adv-beta").children].forEach((b) => b.classList.toggle("on", b === button));
+  loadAdvice($("run-select").value, $("split-select").value);
+};
+
+$("err-thr").oninput = () => {
+  $("err-thr-value").textContent = Number($("err-thr").value).toFixed(2);
+  drawCurve();                 // the cursor on the sweep, no refetch
+  clearTimeout(errorsTimer);   // E6-S3: recomputed server-side from saved detections
+  errorsTimer = setTimeout(
+    () => loadErrors($("run-select").value, $("split-select").value), 250);
+};
+$("err-iou").onchange = () => {
+  loadErrors($("run-select").value, $("split-select").value);
+  loadAdvice($("run-select").value, $("split-select").value);
+};
+
+// -------------------------------------------------------------------- boot
+async function init() {
+  api("/project").then((p) => {
+    $("project-name").textContent = p.name;
+    $("project-name").title = p.root;
+  }).catch(() => { $("project-name").textContent = "(no project bound)"; });
+
+  const runs = (await api("/train/runs")).filter((r) => r.state === "completed");
+  $("no-runs").classList.toggle("hidden", runs.length > 0);
+  $("run-select").innerHTML = runs
+    .map((r) => `<option value="${r.run_id}">${r.run_id} · ${r.model}</option>`)
+    .join("");
+  const updateMeta = () => {
+    const r = runs.find((x) => x.run_id === $("run-select").value);
+    $("run-meta").textContent = r
+      ? `${r.dataset_images} training images · ${new Date(r.created_at).toLocaleDateString()}`
+      : "";
+    closeViewer();
+    if (r) showReport(r.run_id, $("split-select").value);
+    else { $("report").classList.add("hidden"); showErrorsPanel(false); }
+  };
+  const wantSplit = new URLSearchParams(location.search).get("split");
+  if (wantSplit && [...$("split-select").options].some((o) => o.value === wantSplit)) {
+    $("split-select").value = wantSplit;
+  }
+  $("run-select").onchange = updateMeta;
+  $("split-select").onchange = updateMeta;
+  updateMeta();
+}
+init();
+</script>
+</body>
+</html>

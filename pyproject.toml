@@ -9,7 +9,7 @@ description = "End-to-end tooling for perception tasks: annotate, train, evaluat
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
-authors = [{ name = "HiTechCloud Viet Nam" }]
+authors = [{ name = "Bruce Chuang" }]
 # The lightweight core only. The ML stack (torch, rfdetr, transformers) is
 # deliberately NOT a base dependency: its correct source is platform-specific
 # (Windows needs the PyTorch CUDA index, Jetson needs the JetPack wheel,

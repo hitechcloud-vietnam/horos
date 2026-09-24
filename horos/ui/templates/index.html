@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=2">
+<link rel="stylesheet" href="/static/controls.css?v=2">
+<script src="/static/controls.js?v=1" defer></script>
+<title>horos — dataset</title>
+<style>
+  :root {
+    --bg: #101418; --panel: #1a2129; --line: #2a333e;
+    --text: #e6edf3; --dim: #8b98a5; --accent: #0a84ff; --ok: #51cf66; --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 30; background: var(--bg);
+           padding: 10px 24px; border-bottom: 1px solid var(--line);
+           display: flex; align-items: center; gap: 14px; }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .04em; }
+  header .project { color: var(--dim); }
+  header nav { margin-left: auto; display: flex; gap: 8px; }
+  header nav a { position: relative; display: flex; align-items: center;
+                 justify-content: center; width: 34px; height: 34px;
+                 border: 1px solid var(--line); border-radius: 8px;
+                 color: var(--dim); }
+  header nav a:hover { border-color: var(--accent); color: var(--accent); }
+  header nav a[aria-current] { color: var(--text); border-color: var(--accent);
+                               background: rgba(77, 171, 247, .12); }
+  header nav a::after { content: attr(data-tip); position: absolute;
+                        top: calc(100% + 8px); right: 0; z-index: 10;
+                        background: var(--panel); border: 1px solid var(--line);
+                        border-radius: 6px; padding: 3px 10px; font-size: 12px;
+                        color: var(--text); white-space: nowrap; opacity: 0;
+                        pointer-events: none; transition: opacity .12s; }
+  header nav a:hover::after { opacity: 1; }
+  header nav svg { width: 18px; height: 18px; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--line);
+           border-radius: 10px; padding: 18px; }
+  .panel h2 { margin: 0 0 12px; font-size: 14px; color: var(--dim);
+              text-transform: uppercase; letter-spacing: .08em; }
+  #dropzone { border: 2px dashed var(--line); border-radius: 10px; padding: 36px;
+              text-align: center; color: var(--dim); cursor: pointer;
+              transition: border-color .15s, color .15s; }
+  #dropzone.hover, #dropzone:hover { border-color: var(--accent); color: var(--text); }
+  #dropzone input { display: none; }
+  .split-label { display: inline-flex; align-items: center; gap: 8px; color: var(--dim);
+                 font-size: 13px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .card { background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+          padding: 14px; }
+  .card .num { font-size: 26px; font-weight: 600; }
+  .card .label { color: var(--dim); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+            margin-right: 8px; vertical-align: baseline; }
+  .bar { background: var(--line); border-radius: 4px; height: 8px; overflow: hidden; }
+  .bar > div { background: var(--accent); height: 100%; }
+  #upload-progress-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+  #upload-progress-row.hidden { display: none; }  /* the id rule outranks bare .hidden */
+  #upload-progress-row .bar { flex: 1; }
+  #upload-progress-row .bar > div { transition: width .15s; }
+  #upload-phase { color: var(--dim); font-size: 13px; white-space: nowrap; }
+  #dropzone.busy { opacity: .55; cursor: progress; }
+  #status { min-height: 20px; color: var(--dim); }
+  #status.error { color: var(--err); }
+  #status.ok { color: var(--ok); }
+  .issues li { color: var(--err); margin-bottom: 4px; }
+  .issues li.warning { color: #fcc419; }
+  .issues a.issue-link { color: var(--accent); text-decoration: none; white-space: nowrap;
+                         font-size: 12px; margin-left: 6px; }
+  .issues a.issue-link:hover { text-decoration: underline; }
+  .license { color: var(--ok); font-size: 12px; border: 1px solid var(--ok);
+             border-radius: 4px; padding: 1px 6px;
+             display: inline-block; white-space: nowrap; }
+  .hidden { display: none; }
+  /* rarely-touched sections fold away; the page stays one screen (user request 2026-09-14) */
+  details.fold > summary { cursor: pointer; list-style: none; color: var(--dim); font-size: 14px;
+                           text-transform: uppercase; letter-spacing: .08em; user-select: none; }
+  details.fold > summary::-webkit-details-marker { display: none; }
+  details.fold > summary .sub { text-transform: none; letter-spacing: 0; margin-left: 8px; }
+  details.fold[open] > summary { margin-bottom: 12px; }
+  details.fold.inner { margin-top: 18px; }
+  .groups-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 14px; }
+  .group { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  .group.skipped { opacity: .55; }
+  .group .strip { display: flex; gap: 4px; overflow: hidden; border-radius: 6px; }
+  .group .strip a { flex: 1 1 0; min-width: 0; aspect-ratio: 4 / 3; display: block; background: var(--line); }
+  .group .strip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .group .row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--dim); }
+  .group .row b { color: var(--text); }
+  .group button { border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .group button.skip { color: #e03131; border-color: #e03131; }
+  .group button:disabled { opacity: .5; cursor: default; }
+  /* the reset lives in a quiet fold at the very end: plain text until opened */
+  details.quiet { padding: 0 18px; }
+  details.quiet > summary { font-size: 12px; text-transform: none; letter-spacing: 0; color: var(--dim);
+                            opacity: .7; }
+  details.quiet > summary:hover { opacity: 1; }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+           border-radius: 10px; padding: 20px; max-width: 480px; }
+  dialog::backdrop { background: rgba(0, 0, 0, .55); }
+  dialog h3 { margin: 0 0 10px; font-size: 15px; }
+  dialog p { color: var(--dim); margin: 0 0 12px; }
+  dialog ul { max-height: 160px; overflow-y: auto; margin: 0 0 14px; padding-left: 20px; }
+  dialog .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  dialog button { background: var(--bg); color: var(--text); border: 1px solid var(--line);
+                  border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+  dialog button:hover { border-color: var(--accent); }
+  dialog button.primary { border-color: var(--accent); color: var(--accent); }
+  #class-names-list { display: grid; gap: 6px; margin-bottom: 14px; }
+  #class-names-list input { background: var(--bg); color: var(--text);
+                            border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 style="display:flex;align-items:center;gap:9px">
+    <svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M7 22 L7 9 Q7 7 9 7 L22 7" fill="none" stroke="#e6edf3"
+            stroke-width="4.6" stroke-linecap="round"/>
+      <rect x="17" y="17" width="9" height="9" rx="2.2" fill="#4dabf7"/></svg>
+    horos</h1>
+  <span class="project" id="project-name">—</span>
+  <nav>
+    <a href="/" data-tip="Dataset" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="5" rx="8" ry="3"/>
+        <path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/>
+        <path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg></a>
+    <a href="/annotate" data-tip="Annotate">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+        <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></a>
+    <a href="/loop" data-tip="Loop">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12a9 9 0 0 1-15.5 6.2"/><path d="M3 12a9 9 0 0 1 15.5-6.2"/>
+        <polyline points="21 3 21 9 15 9"/><polyline points="3 21 3 15 9 15"/></svg></a>
+    <a href="/train" data-tip="Training">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></a>
+    <a href="/evaluate" data-tip="Evaluate">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/>
+        <line x1="12" y1="1" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="1" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="23" y2="12"/></svg></a>
+    <a href="/experiments" data-tip="Experiments">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="5" height="9" rx="1"/>
+        <rect x="9.5" y="4" width="5" height="16" rx="1"/>
+        <rect x="16" y="8" width="5" height="12" rx="1"/></svg></a>
+    <a href="/lab" data-tip="Lab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 3h6"/><path d="M10 3v6.5L4.6 18.4A2 2 0 0 0 6.3 21h11.4a2 2 0 0 0 1.7-2.6L14 9.5V3"/>
+        <path d="M7.5 14h9"/></svg></a>
+  </nav>
+</header>
+<main>
+  <section class="panel">
+    <h2>Upload</h2>
+    <div id="dropzone">
+      <input type="file" id="file-input" accept=".zip,.jpg,.jpeg,.png,.bmp,.webp" multiple>
+      <p><strong>Drop a .zip or photos here</strong> or click to choose</p>
+      <p style="font-size:12px;margin:4px 0 0"
+         title="COCO: _annotations.coco.json · YOLO: data.yaml · VIA: via_region_data.json · LabelMe: one .json per image · Pascal VOC and Darknet by their files · photos alone join the project unlabeled">
+        COCO · YOLO · VOC · Darknet · VIA · LabelMe — detected automatically · photos alone arrive unlabeled</p>
+    </div>
+    <div id="upload-progress-row" class="hidden">
+      <div class="bar"><div id="upload-bar"></div></div>
+      <span id="upload-phase"></span>
+    </div>
+    <p id="status"></p>
+  </section>
+
+  <dialog id="conflict-dialog">
+    <h3>Same names, different content</h3>
+    <p>These photos already exist with other content. Identical copies are skipped.</p>
+    <ul id="conflict-list"></ul>
+    <div class="actions">
+      <button data-policy="">Cancel</button>
+      <button data-policy="skip">Skip them</button>
+      <button data-policy="rename">Import renamed</button>
+      <button data-policy="overwrite" class="primary">Overwrite</button>
+    </div>
+  </dialog>
+
+  <dialog id="labels-dialog">
+    <h3>These photos already have labels</h3>
+    <p>The upload brings labels for photos that are labeled already. Photos with no labels yet simply receive theirs.</p>
+    <ul id="labels-list"></ul>
+    <div class="actions">
+      <button data-policy="">Cancel</button>
+      <button data-policy="skip">Keep existing</button>
+      <button data-policy="merge">Keep both</button>
+      <button data-policy="replace" class="primary">Replace</button>
+    </div>
+  </dialog>
+
+  <dialog id="class-names-dialog">
+    <h3>Name the classes</h3>
+    <p>This dataset has no class names.</p>
+    <div id="class-names-list"></div>
+    <div class="actions">
+      <button data-ok="">Cancel</button>
+      <button data-ok="1" class="primary">Import</button>
+    </div>
+  </dialog>
+
+  <section class="panel hidden" id="summary-panel">
+    <h2>Dataset</h2>
+    <div class="cards">
+      <div class="card"><div class="num" id="n-images">0</div><div class="label">images</div></div>
+      <div class="card"><div class="num" id="n-annotations">0</div><div class="label">annotations</div></div>
+      <div class="card"><div class="num" id="n-categories">0</div><div class="label">classes</div></div>
+      <div class="card"><div class="num" id="n-splits">—</div><div class="label">train / valid / test</div></div>
+      <div class="card"><div class="num" id="n-unlabeled">—</div><div class="label">unlabeled · in no set</div></div>
+    </div>
+    <h2 style="margin-top:18px">Classes</h2>
+    <table id="class-table">
+      <thead><tr><th>class</th><th>instances</th><th>images</th><th style="width:40%"></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <details class="fold inner" id="splits-fold">
+      <summary title="Only labeled photos belong to a set. A photo joins train / valid / test the first time it is labeled, by a stable hash in these shares, and never moves — so test is never trained on. valid picks the best checkpoint.">
+        Splits<span class="sub" id="splits-note"></span></summary>
+    <div id="split-controls" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <label class="split-label">train %
+        <span class="stepper narrow"><input type="number" id="split-train" value="80" min="1" max="100" step="5">
+          <span class="step-btns"><button data-step="1" data-for="split-train" tabindex="-1" title="+5"></button>
+            <button data-step="-1" data-for="split-train" tabindex="-1" title="−5"></button></span></span></label>
+      <label class="split-label">valid %
+        <span class="stepper narrow"><input type="number" id="split-valid" value="10" min="0" max="99" step="5">
+          <span class="step-btns"><button data-step="1" data-for="split-valid" tabindex="-1" title="+5"></button>
+            <button data-step="-1" data-for="split-valid" tabindex="-1" title="−5"></button></span></span></label>
+      <label class="split-label">test %
+        <span class="stepper narrow"><input type="number" id="split-test" value="10" min="0" max="99" step="5">
+          <span class="step-btns"><button data-step="1" data-for="split-test" tabindex="-1" title="+5"></button>
+            <button data-step="-1" data-for="split-test" tabindex="-1" title="−5"></button></span></span></label>
+      <label class="split-label">seed
+        <span class="stepper narrow"><input type="number" id="split-seed" value="42" min="0" step="1">
+          <span class="step-btns"><button data-step="1" data-for="split-seed" tabindex="-1" title="+1"></button>
+            <button data-step="-1" data-for="split-seed" tabindex="-1" title="−1"></button></span></span></label>
+      <button id="split-btn" title="Save these shares and give labeled photos without a set their set. Photos already in a set stay."
+              style="background:var(--bg);color:var(--accent);
+        border:1px solid var(--accent);border-radius:6px;padding:6px 14px;cursor:pointer">
+        Assign splits</button>
+      <button id="reshuffle-btn" title="Re-draw every labeled photo at random under this seed. Photos earlier models trained on may land in test, so the learning curve's test line is no longer clean."
+              style="background:var(--bg);color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer">
+        Reshuffle…</button>
+      <span id="split-status" style="color:var(--dim);font-size:13px"></span>
+    </div>
+    </details>
+    <details class="fold inner" id="groups-fold">
+      <summary title="Photos grouped by what they look like (DINOv2 embeddings, k-means). Look at a group's samples and skip the whole group when it is unfit for training — blank frames, a misfiled camera, duplicates of an empty scene. Skipped photos stay in the project and can be restored.">
+        Groups<span class="sub" id="groups-note">· find and skip unfit photos in bulk</span></summary>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <label class="split-label" title="How many groups to form. Empty = automatic (about √(photos ÷ 2), at most 24).">groups
+          <span class="stepper narrow"><input type="number" id="groups-k" min="1" max="64" step="1" placeholder="auto">
+            <span class="step-btns"><button data-step="1" data-for="groups-k" tabindex="-1" title="+1"></button>
+              <button data-step="-1" data-for="groups-k" tabindex="-1" title="−1"></button></span></span></label>
+        <button id="groups-btn" title="Embed every photo that is not embedded yet, then group them"
+                style="background:var(--bg);color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:6px 14px;cursor:pointer">
+          Analyze</button>
+        <span id="groups-status" style="color:var(--dim);font-size:13px"></span>
+      </div>
+      <div id="groups-grid" class="groups-grid"></div>
+    </details>
+  </section>
+
+  <section class="panel hidden" id="issues-panel">
+    <h2>Validation</h2>
+    <ul class="issues" id="issues-list"></ul>
+    <div class="hidden" id="fix-row" style="margin-top:10px">
+      <button id="fix-btn" style="background:var(--bg);color:var(--accent);
+        border:1px solid var(--accent);border-radius:6px;padding:6px 14px;cursor:pointer">
+        Fix automatically</button>
+      <span id="fix-status" style="color:var(--dim);font-size:13px;margin-left:10px"></span>
+    </div>
+  </section>
+
+  <details class="panel fold" id="models-fold">
+    <summary>Models<span class="sub">· licenses</span></summary>
+    <table id="models-table">
+      <thead><tr><th>model</th><th>input</th><th>params</th><th>latency</th><th>license</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </details>
+
+  <details class="fold quiet hidden" id="danger-panel">
+    <summary title="Delete every photo and annotation of this project to start over. Training runs keep their own snapshots; photos another annotator holds right now are skipped.">Reset project…</summary>
+    <div class="row" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:6px;color:var(--dim);font-size:13px;cursor:pointer">
+        <input type="checkbox" id="clear-classes"> also delete the classes</label>
+      <button id="clear-btn" style="background:var(--bg);color:var(--err);
+        border:1px solid var(--err);border-radius:6px;padding:6px 14px;cursor:pointer">
+        Delete all photos and annotations…</button>
+      <span id="clear-status" style="color:var(--dim);font-size:13px"></span>
+    </div>
+  </details>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const api = (path, opts) => fetch("/api/v1" + path, opts).then(async (r) => {
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const err = new Error((data.error && data.error.message) || r.statusText);
+    err.code = data.error && data.error.code;
+    err.details = (data.error && data.error.details) || {};
+    throw err;
+  }
+  return data;
+});
+
+let projectName = null;
+
+async function refreshProject() {
+  try {
+    const p = await api("/project");
+    projectName = p.name;
+    if (p.split_ratios) {  // the project's standing shares drive the steppers
+      $("split-train").value = Math.round(p.split_ratios.train * 100);
+      $("split-valid").value = Math.round(p.split_ratios.valid * 100);
+      $("split-test").value = Math.round(p.split_ratios.test * 100);
+      $("split-seed").value = p.split_seed;
+      $("splits-note").textContent = `· ${Math.round(p.split_ratios.train * 100)} / `
+        + `${Math.round(p.split_ratios.valid * 100)} / ${Math.round(p.split_ratios.test * 100)} %`;
+    }
+    $("project-name").textContent = p.name;
+    $("project-name").title = p.root;   // full path on hover
+    $("danger-panel").classList.toggle("hidden", !(p.num_images > 0 || (p.categories || []).length > 0));
+    if (p.num_images > 0) await refreshStats();
+    else { $("summary-panel").classList.add("hidden"); $("issues-panel").classList.add("hidden"); }
+  } catch (e) {
+    $("project-name").textContent = "(no project bound)";
+  }
+}
+
+// the whole dataset goes only after the user types the project name — the
+// same confirmation the API itself demands (DELETE /dataset {confirm})
+$("clear-btn").addEventListener("click", async () => {
+  if (!projectName) return;
+  const typed = prompt(
+    `Delete every photo and annotation of "${projectName}"?\n\n`
+    + `Training runs are kept. Type the project name to confirm:`);
+  if (typed === null) return;
+  const status = $("clear-status");
+  if (typed.trim() !== projectName) { status.textContent = "name did not match — nothing deleted"; return; }
+  status.textContent = "deleting…";
+  $("clear-btn").disabled = true;
+  try {
+    const r = await api("/dataset", {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: typed.trim(), keep_categories: !$("clear-classes").checked }),
+    });
+    status.textContent = `deleted ${r.deleted_images} image(s), ${r.deleted_annotations} annotation(s)`
+      + (r.deleted_categories ? `, ${r.deleted_categories} class(es)` : "")
+      + (r.skipped_claimed.length ? ` — ${r.skipped_claimed.length} image(s) skipped: another annotator holds them` : "");
+    await refreshProject();
+  } catch (e) {
+    status.textContent = "failed: " + e.message;
+  } finally { $("clear-btn").disabled = false; }
+});
+
+async function refreshStats() {
+  const s = await api("/dataset/stats");
+  $("summary-panel").classList.remove("hidden");
+  $("n-images").textContent = s.num_images;
+  $("n-annotations").textContent = s.num_annotations;
+  $("n-categories").textContent = s.num_categories;
+  const sc = s.split_counts || {};
+  $("n-splits").textContent =
+    (sc.train || 0) + " / " + (sc.valid || 0) + " / " + (sc.test || 0);
+  $("n-unlabeled").textContent = s.num_images - ((sc.train || 0) + (sc.valid || 0) + (sc.test || 0));
+  const max = Math.max(1, ...s.per_class.map((c) => c.instances));
+  $("class-table").querySelector("tbody").innerHTML = s.per_class
+    .map((c) => `<tr><td>${c.name}</td><td>${c.instances}</td><td>${c.images}</td>
+      <td><div class="bar"><div style="width:${(100 * c.instances) / max}%"></div></div></td></tr>`)
+    .join("");
+  const v = await api("/dataset/validation");
+  const list = $("issues-list");
+  if (v.issues.length === 0) {
+    list.innerHTML = '<li style="color:var(--ok)">No issues found</li>';
+  } else {
+    // an issue on a known image links straight into the editor; with an
+    // annotation id the editor selects that shape and blinks it twice
+    const link = (i) => {
+      if (i.image_id == null) return "";
+      const target = `/annotate#${i.image_id}${i.annotation_id != null ? ":" + i.annotation_id : ""}`;
+      const label = i.annotation_id != null ? "open annotation" : "open image";
+      return ` <a class="issue-link" href="${target}" title="${i.file_name || ""}">${label} ↗</a>`;
+    };
+    list.innerHTML = v.issues
+      .map((i) => `<li class="${i.level}">[${i.kind}] ${i.message}${link(i)}</li>`)
+      .join("");
+  }
+  const fixable = v.issues.filter((i) => i.fixable).length;
+  $("fix-row").classList.toggle("hidden", fixable === 0);
+  if (fixable) $("fix-btn").textContent = `Fix ${fixable} issue${fixable > 1 ? "s" : ""} automatically`;
+  $("issues-panel").classList.remove("hidden");
+}
+
+$("fix-btn").onclick = async () => {
+  const btn = $("fix-btn"), status = $("fix-status");
+  btn.disabled = true;
+  status.textContent = "Fixing…";
+  try {
+    const r = await api("/dataset/validation/fix", { method: "POST" });
+    status.textContent = `Repaired ${r.num_fixed} box${r.num_fixed === 1 ? "" : "es"} (clamped into bounds / refitted to their polygons)`;
+    await refreshStats();
+  } catch (e) {
+    status.textContent = "Fix failed: " + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+function askDialog(dialog, setup) {
+  // resolves with the value the clicked button carries, or null on cancel/esc
+  return new Promise((resolve) => {
+    setup();
+    const done = (value) => { dialog.close(); resolve(value); };
+    dialog.querySelectorAll("button").forEach((b) => {
+      b.onclick = () => done((b.dataset.policy || b.dataset.ok) ? b : null);
+    });
+    dialog.oncancel = () => resolve(null);
+    dialog.showModal();
+  });
+}
+
+async function resolveConflicts(conflicts) {
+  const btn = await askDialog($("conflict-dialog"), () => {
+    $("conflict-list").innerHTML = conflicts
+      .map((name) => `<li>${name}</li>`).join("");
+  });
+  return btn ? btn.dataset.policy : null;
+}
+
+async function resolveLabels(conflicts) {
+  const btn = await askDialog($("labels-dialog"), () => {
+    $("labels-list").innerHTML = conflicts
+      .map((name) => `<li>${name}</li>`).join("");
+  });
+  return btn ? btn.dataset.policy : null;
+}
+
+async function editClassNames(defaults) {
+  const btn = await askDialog($("class-names-dialog"), () => {
+    $("class-names-list").innerHTML = defaults
+      .map((n, i) => `<input value="${n}" aria-label="class ${i}">`).join("");
+  });
+  if (!btn) return null;
+  return [...$("class-names-list").querySelectorAll("input")]
+    .map((inp) => inp.value.trim() || inp.getAttribute("value"));
+}
+
+// ------------------------------------------------------------ upload with progress
+// Two phases, both visible: the browser streams the zip (XHR upload progress),
+// then the server imports it as a background job whose R4 events we poll.
+let uploading = false;
+
+function showProgress(fraction, text) {
+  $("upload-progress-row").classList.remove("hidden");
+  if (fraction != null) $("upload-bar").style.width = (100 * fraction).toFixed(1) + "%";
+  $("upload-phase").textContent = text;
+}
+
+function hideProgress() {
+  $("upload-progress-row").classList.add("hidden");
+  $("upload-bar").style.width = "0";
+  $("upload-phase").textContent = "";
+}
+
+function fmtBytes(n) {
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+  if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " MB";
+  return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
+}
+
+// POST multipart with upload progress — fetch() cannot report bytes sent.
+// One zip or any number of photos, every one under the same field name.
+function uploadFiles(files, extras) {
+  return new Promise((resolve, reject) => {
+    const body = new FormData();
+    files.forEach((file) => body.append("file", file));
+    if (extras.on_conflict) body.append("on_conflict", extras.on_conflict);
+    if (extras.on_annotations) body.append("on_annotations", extras.on_annotations);
+    if (extras.class_names) body.append("class_names", JSON.stringify(extras.class_names));
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/v1/dataset/upload");
+    xhr.responseType = "json";
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      showProgress(e.loaded / e.total,
+        `Uploading ${Math.round(100 * e.loaded / e.total)}% · ${fmtBytes(e.loaded)} / ${fmtBytes(e.total)}`);
+    };
+    xhr.onerror = () => reject(new Error("network error during upload"));
+    xhr.onload = () => {
+      const data = xhr.response || {};
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data);
+      const err = new Error((data.error && data.error.message) || xhr.statusText);
+      err.code = data.error && data.error.code;
+      err.details = (data.error && data.error.details) || {};
+      reject(err);
+    };
+    xhr.send(body);
+  });
+}
+
+// poll /jobs/<id>; resolves with the completed event's result, rejects with an
+// Error carrying the failed event's error_code and details
+function pollJob(jobId, onEvent) {
+  return new Promise((resolve, reject) => {
+    let seen = 0, result = null;
+    const tick = async () => {
+      let job;
+      try { job = await api(`/jobs/${jobId}?after=${seen}`); }
+      catch (e) { return reject(e); }
+      seen = job.num_events;
+      for (const ev of job.events) {
+        if (onEvent) onEvent(ev);
+        if (ev.type === "completed") result = ev.result;
+        if (ev.type === "failed") {
+          const err = new Error(ev.message);
+          err.code = ev.error_code;
+          err.details = ev.details || {};
+          return reject(err);
+        }
+      }
+      if (job.state === "running") setTimeout(tick, 500);
+      else if (job.state === "completed") resolve(result);
+      else reject(new Error("import job " + job.state));
+    };
+    tick();
+  });
+}
+
+function describeProgress(ev) {
+  if (ev.type !== "progress") return;
+  const label = ev.phase.charAt(0).toUpperCase() + ev.phase.slice(1);
+  if (ev.total) {
+    showProgress(ev.current / ev.total, `${label} ${ev.current}/${ev.total}`);
+  } else {
+    showProgress(null, label + (ev.message ? ` — ${ev.message}` : "") + "…");
+  }
+}
+
+function showSummary(summary) {
+  const status = $("status");
+  const resolved = [];
+  if (summary.duplicates_skipped) resolved.push(`${summary.duplicates_skipped} identical duplicate(s) skipped`);
+  if (summary.overwritten) resolved.push(`${summary.overwritten} overwritten`);
+  if (summary.conflicts_skipped) resolved.push(`${summary.conflicts_skipped} conflict(s) skipped`);
+  if (summary.renamed) resolved.push(`${summary.renamed} renamed`);
+  if (summary.images_matched) resolved.push(`labels applied to ${summary.images_matched} photo(s) already here`);
+  if (summary.annotations_replaced) resolved.push(`${summary.annotations_replaced} relabeled`);
+  if (summary.annotations_merged) resolved.push(`${summary.annotations_merged} with both label sets`);
+  if (summary.annotations_kept) resolved.push(`${summary.annotations_kept} kept as they were`);
+  status.className = "ok";
+  const headline = summary.format === "images"
+    ? `Imported ${summary.num_images} photo(s) with no labels — label them on the Annotate page, ` +
+      `or let the Loop pick a batch`
+    : `Imported ${summary.num_images} images, ${summary.num_annotations} annotations, ` +
+      `${summary.num_categories} classes (${summary.format.toUpperCase()})`;
+  status.textContent = headline +
+    (resolved.length ? ` — ${resolved.join(", ")}` : "") +
+    (summary.warnings.length ? ` — ${summary.warnings.length} warning(s)` : "");
+}
+
+// runs (and re-runs, after a dialog) the import job for a staged upload
+async function importStaged(uploadId, jobId, extras) {
+  try {
+    showProgress(0, "Import queued…");
+    const summary = await pollJob(jobId, describeProgress);
+    showSummary(summary);
+    await refreshStats();
+    await refreshProject();
+  } catch (e) {
+    if (e.code === "import_conflict" || e.code === "label_conflict"
+        || e.code === "class_names_required") {
+      let next = null;
+      if (e.code === "import_conflict") {
+        const policy = await resolveConflicts(e.details.conflicts || []);
+        if (policy) next = { ...extras, on_conflict: policy };
+      } else if (e.code === "label_conflict") {
+        const policy = await resolveLabels(e.details.conflicts || []);
+        if (policy) next = { ...extras, on_annotations: policy };
+      } else {
+        const names = await editClassNames(e.details.default_names || []);
+        if (names) next = { ...extras, class_names: names };
+      }
+      if (next) {
+        // the zip is still on the server — retry with the decision, no re-upload
+        const { job_id } = await api(`/dataset/upload/${uploadId}/import`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(next),
+        });
+        return importStaged(uploadId, job_id, next);
+      }
+      await api(`/dataset/upload/${uploadId}`, { method: "DELETE" }).catch(() => {});
+      $("status").className = "";
+      $("status").textContent = "Import cancelled — nothing was changed.";
+      return;
+    }
+    throw e;
+  }
+}
+
+async function upload(files, extras = {}) {
+  files = [...files];
+  if (!files.length) return;
+  if (uploading) { $("status").textContent = "Still importing the previous upload…"; return; }
+  uploading = true;
+  zone.classList.add("busy");
+  const status = $("status");
+  const label = files.length === 1 ? files[0].name : `${files.length} photos`;
+  const size = files.reduce((n, f) => n + f.size, 0);
+  status.className = "";
+  status.textContent = `Uploading ${label} (${fmtBytes(size)})…`;
+  showProgress(0, "Uploading 0%");
+  try {
+    const staged = await uploadFiles(files, extras);
+    status.textContent = `Importing ${label}…`;
+    await importStaged(staged.upload_id, staged.job_id, extras);
+  } catch (e) {
+    status.className = "error";
+    status.textContent = "Import failed: " + e.message;
+  } finally {
+    uploading = false;
+    zone.classList.remove("busy");
+    hideProgress();
+  }
+}
+
+const zone = $("dropzone");
+zone.addEventListener("click", () => $("file-input").click());
+$("file-input").addEventListener("change", (e) => {
+  upload(e.target.files);
+  e.target.value = "";  // the same photos can be chosen again after a cancel
+});
+["dragover", "dragenter"].forEach((t) =>
+  zone.addEventListener(t, (e) => { e.preventDefault(); zone.classList.add("hover"); }));
+["dragleave", "drop"].forEach((t) =>
+  zone.addEventListener(t, (e) => { e.preventDefault(); zone.classList.remove("hover"); }));
+zone.addEventListener("drop", (e) => upload(e.dataTransfer.files));
+
+async function applySplits(reshuffle) {
+  const pct = (id) => Number($(id).value) || 0;
+  const total = pct("split-train") + pct("split-valid") + pct("split-test");
+  const status = $("split-status");
+  if (total !== 100) {
+    status.textContent = `percentages sum to ${total}, need 100`;
+    return;
+  }
+  if (reshuffle && !confirm(
+    "Re-draw every labeled photo at random?\n\nPhotos that earlier models trained on may land in " +
+    "test, so the learning curve's test line will no longer be clean. Unlabeled photos stay in no set."
+  )) return;
+  status.textContent = reshuffle ? "reshuffling…" : "assigning…";
+  try {
+    const counts = await api("/dataset/split", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        train: pct("split-train") / 100,
+        valid: pct("split-valid") / 100,
+        test: pct("split-test") / 100,
+        seed: Number($("split-seed").value) || 42,
+        reshuffle,
+      }),
+    });
+    status.textContent =
+      `${counts.train} / ${counts.valid} / ${counts.test} · ${counts.unassigned} unlabeled in no set`;
+    await refreshStats();
+  } catch (e) {
+    status.textContent = "failed: " + e.message;
+  }
+}
+$("split-btn").addEventListener("click", () => applySplits(false));
+
+// ------------------------------------------------------------ photo groups
+// Groups are k-means over the loop's DINOv2 embeddings (E10-T20). The
+// embedding store is brought up to date first (a job with progress), then
+// one GET returns the groups with a few samples each; skipping a group is
+// the annotator's skip (images.skip), so the loop, stats and snapshots all
+// see it, and Restore undoes it.
+let groups = [];
+async function analyzeGroups() {
+  const status = $("groups-status");
+  const button = $("groups-btn");
+  button.disabled = true;
+  try {
+    const emb = await api("/loop/embeddings");
+    if (emb.missing || emb.stale) {
+      status.textContent = `embedding ${emb.missing + emb.stale} photos…`;
+      const job = await api("/loop/embeddings", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+      });
+      await pollJob(job.job_id, (ev) => {
+        if (ev.type === "progress" && ev.total) status.textContent = `embedding ${ev.current}/${ev.total}…`;
+      });
+    }
+    status.textContent = "grouping…";
+    const k = Number($("groups-k").value);
+    const q = new URLSearchParams({ samples: "6" });
+    if (k) q.set("k", String(k));
+    const result = await api("/images/clusters?" + q);
+    groups = result.clusters;
+    status.textContent = `${result.k} groups · ${result.embedded} photos` +
+      (result.embedded < result.total_images ? ` (${result.total_images - result.embedded} not embedded)` : "");
+    renderGroups();
+  } catch (e) {
+    status.textContent = "failed: " + e.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderGroups() {
+  $("groups-grid").innerHTML = groups.map((g, i) => {
+    const allSkipped = g.skipped === g.size;
+    const labeledSet = new Set(g.labeled_ids || []);  // labeled samples get a green edge
+    const strip = g.samples.map((s) => `
+      <a href="/annotate#${s.id}" title="${s.file_name} — open in the annotator" style="${labeledSet.has(s.id) ? "outline:2px solid var(--ok);outline-offset:-2px" : ""}">
+        <img loading="lazy" src="/api/v1/images/${s.id}/file" alt=""></a>`).join("");
+    const facts = [`<b>${g.size}</b> photos`, `alike ${g.cohesion.toFixed(2)}`];
+    if (g.labeled) facts.push(`<b>${g.labeled}</b> labeled`);
+    if (g.skipped) facts.push(`<b>${g.skipped}</b> skipped`);
+    return `
+    <div class="group ${allSkipped ? "skipped" : ""}" data-i="${i}">
+      <div class="strip">${strip}</div>
+      <div class="row">
+        <span>${facts.join(" · ")}</span>
+        <span style="flex:1"></span>
+        ${g.skipped ? `<button class="restore" title="Bring the skipped photos of this group back">Restore</button>` : ""}
+        ${allSkipped ? "" : g.labeled && g.labeled < g.size
+          ? `<button class="skip-unlabeled" title="Skip only the photos of this group that carry no labels; the ${g.labeled} labeled stay">Skip unlabeled</button>
+             <button class="skip" title="Skip every photo of this group, labeled ones too — their labels leave training">Skip all…</button>`
+          : `<button class="skip" title="Skip every photo of this group — they leave the pool, statistics, snapshots and training">Skip group</button>`}
+      </div>
+    </div>`;
+  }).join("");
+  $("groups-grid").querySelectorAll(".group").forEach((el) => {
+    const g = groups[Number(el.dataset.i)];
+    const skip = el.querySelector(".skip"), restore = el.querySelector(".restore");
+    const unlabeled = el.querySelector(".skip-unlabeled");
+    if (skip) skip.onclick = () => skipGroup(g, el, true);
+    if (unlabeled) unlabeled.onclick = () => skipGroup(g, el, false);
+    if (restore) restore.onclick = () => restoreGroup(g, el);
+  });
+}
+
+// withLabeled=false skips only the members that carry no labels — the
+// usual case: the group is junk, but the few photos someone already labeled
+// are kept and keep training
+async function skipGroup(g, el, withLabeled) {
+  const labeled = new Set(g.labeled_ids || []);
+  const ids = withLabeled ? g.image_ids : g.image_ids.filter((id) => !labeled.has(id));
+  if (!ids.length) return;
+  if (withLabeled && g.labeled && !confirm(
+    `Skip all ${g.size} photos of this group?\n\n${g.labeled} of them carry labels; skipped photos and their labels leave training.`
+  )) return;
+  el.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+  try {
+    await api("/images/skip", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_ids: ids, note: "skipped as a group (Dataset page)" }),
+    });
+    g.skipped = withLabeled ? g.size : g.size - g.labeled;
+    if (withLabeled) g.labeled_ids = [];
+    renderGroups();
+    await refreshStats();
+  } catch (e) {
+    $("groups-status").textContent = "skip failed: " + e.message;
+    renderGroups();
+  }
+}
+
+async function restoreGroup(g, el) {
+  el.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+  try {
+    await api("/images/restore", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_ids: g.image_ids }),
+    });
+    g.skipped = 0;
+    renderGroups();
+    await refreshStats();
+  } catch (e) {
+    $("groups-status").textContent = "restore failed: " + e.message;
+    renderGroups();
+  }
+}
+$("groups-btn").addEventListener("click", analyzeGroups);
+$("reshuffle-btn").addEventListener("click", () => applySplits(true));
+
+api("/models").then((models) => {
+  $("models-table").querySelector("tbody").innerHTML = models
+    .map((m) => `<tr><td>${m.display_name}</td><td>${m.input_resolution}px</td>
+      <td>${m.params_millions}M</td><td>${m.latency_hint}</td>
+      <td><span class="license">${m.weights_license}</span></td></tr>`)
+    .join("");
+});
+
+refreshProject();
+</script>
+</body>
+</html>
